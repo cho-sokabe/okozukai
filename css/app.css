@@ -197,12 +197,20 @@ input { font: inherit; color: inherit; }
 .grp .r .chev { color: var(--faint); }
 .grp .r.add { color: var(--gray); }
 .grp i.c { width: 30px; height: 30px; border-radius: 50%; background: var(--chip); display: grid; place-items: center; flex: none; }
+/* カテゴリの並べ替え（D-075） */
+.grp .handle { margin-left: auto; width: 44px; height: 34px; display: grid; place-items: center; font-size: 20px; color: var(--gray); touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none; }
+.grp .r.dragging { position: relative; z-index: 2; background: var(--card); box-shadow: 0 6px 18px rgba(0,0,0,.12); border-radius: 12px; }
+#catlist .r { transition: transform .15s; }
+#catlist .r.dragging { transition: none; }
+.grp button.r.editing { color: var(--ink); font-weight: 600; }
 .grp .tools { margin-left: auto; display: flex; gap: 4px; }
 .grp .tools button { width: 34px; height: 34px; display: grid; place-items: center; color: var(--gray); border-radius: 50%; }
 .grp .tools button.del { color: var(--red); }
 .grp .tools button:disabled { opacity: .3; }
 .field { background: var(--card); border-radius: 26px; height: 54px; display: flex; align-items: center; gap: 14px; padding: 0 20px; color: var(--faint); margin-bottom: 18px; }
 .field input { border: 0; outline: 0; background: none; flex: 1; min-width: 0; font-size: 16px; color: var(--ink); }
+/* 名前の欄の左のアイコン（選んだアイコン）は濃く出す（D-076。薄いと選べているか分かりにくい） */
+.field .ic { color: var(--ink); }
 .field input::placeholder { color: var(--faint); }
 .icons { background: var(--card); border-radius: 26px; padding: 18px 0 10px; margin-bottom: 18px; }
 .icons .pages { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }

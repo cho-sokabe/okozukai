@@ -273,13 +273,17 @@ function categoriesPage() {
   const list = cats();
   return `<div class="screen" data-key="categories">
     <div class="navbar"><button class="circ" data-a="back" aria-label="戻る">${icon("chevron-left", 20)}</button><div class="ttl">カテゴリ</div><button class="pillbtn" data-a="catedit">${ui.catEdit ? "完了" : "編集"}</button></div>
-    <div class="label">追加</div>
+    <div class="label" id="catmode">${d.id ? "編集" : "追加"}</div>
     <label class="field">${icon(d.icon, 22)}<input id="catname" placeholder="名前" maxlength="${MAX_CATEGORY_NAME}" value="${esc(d.name)}" autocomplete="off"></label>
     <div class="label">アイコン</div>
     ${iconPicker(d.icon)}
-    <button class="addbtn" data-a="addcat" id="addcat" ${d.name.trim() ? "" : "disabled"}>追加</button>
-    <div class="label">一覧</div>
-    <div class="grp" id="catlist">${list.map((c, i) => `<div class="r">${ic(c.icon, 16)}${esc(c.name)}${ui.catEdit ? `<span class="tools"><button data-a="catup" data-id="${esc(c.id)}" ${i ? "" : "disabled"} aria-label="上へ">${icon("chevron-up", 18)}</button><button data-a="catdown" data-id="${esc(c.id)}" ${i < list.length - 1 ? "" : "disabled"} aria-label="下へ">${icon("chevron-down", 18)}</button><button class="del" data-a="catdel" data-id="${esc(c.id)}" aria-label="消す">${icon("trash-2", 18)}</button></span>` : ""}</div>`).join("") || `<p class="empty">カテゴリがありません</p>`}</div>
+    ${d.id
+      ? `<div class="btnrow" style="margin-bottom:18px"><button data-a="catcancel">やめる</button><button class="del" data-a="catdel">消す</button><button class="main" data-a="savecat" id="addcat" ${d.name.trim() ? "" : "disabled"}>保存</button></div>`
+      : `<button class="addbtn" data-a="addcat" id="addcat" ${d.name.trim() ? "" : "disabled"}>追加</button>`}
+    <div class="label">一覧${ui.catEdit ? "（≡ を押さえたまま上下に動かす）" : "（押すと編集）"}</div>
+    <div class="grp" id="catlist">${list.map(c => ui.catEdit
+      ? `<div class="r" data-id="${esc(c.id)}">${ic(c.icon, 16)}${esc(c.name)}<span class="handle" data-handle="${esc(c.id)}" aria-label="並べ替え">≡</span></div>`
+      : `<button class="r ${c.id === d.id ? "editing" : ""}" data-a="catopen" data-id="${esc(c.id)}">${ic(c.icon, 16)}${esc(c.name)}<span class="chev" style="margin-left:auto">${icon("chevron-right", 18)}</span></button>`).join("") || `<p class="empty">カテゴリがありません</p>`}</div>
   </div>${dock(false)}`;
 }
 
@@ -422,9 +426,20 @@ function render() {
   lastKey = nsc && nsc.dataset.key;
   hookDots();
   checkScrolly();
+  showPickedIconPage();
   const wheel = $("#wheel");
   if (wheel && s && s.day) { wheel.scrollTop = (s.day - 1) * 36; }
   if (wheel && s && s.type === "period") { wheel.scrollTop = s.idx * 36; }
+}
+
+/** アイコンの一覧を、選んだアイコンのページに合わせる（B-004: 描き直すと1ページ目に戻っていた） */
+function showPickedIconPage() {
+  const pages = $(".icons .pages"), on = pages && pages.querySelector("button.on");
+  if (!on) return;
+  const i = [...pages.children].indexOf(on.closest(".g"));
+  pages.scrollLeft = i * pages.clientWidth;
+  const dots = document.getElementById(pages.dataset.dots);
+  if (dots) [...dots.children].forEach((d, k) => d.classList.toggle("on", k === i));
 }
 
 function hookDots() {
@@ -484,7 +499,7 @@ function confirmDialog(d) { ui.dialog = d; render(); }
 const handlers = {
   tab: t => { ui.tab = t.dataset.t; ui.page = null; ui.sheet = null; if (ui.tab === "calendar") ui.cal = { start: null, sel: null }; render(); },
   page: t => { ui.page = { name: t.dataset.p }; ui.sum.pick = null; if (t.dataset.p === "summary") ui.sum.start = ui.cal.start; render(); },
-  back: () => { ui.page = null; ui.catEdit = false; render(); },
+  back: () => { ui.page = null; ui.catEdit = false; ui.catDraft = { name: "", icon: ui.catDraft.icon }; render(); },
   new: () => openEntry({ date: ui.tab === "calendar" && ui.cal.sel ? ui.cal.sel : TODAY }),
   quick: t => openEntry({ catId: t.dataset.id }),
   open: t => openRecord(t.dataset.id),
@@ -611,14 +626,33 @@ const handlers = {
     await commit([put("categories", { id: uid(), name, icon: d.icon, order })]);
     render();
   },
-  catedit: () => { syncNameField(); ui.catEdit = !ui.catEdit; render(); },
-  catup: t => moveCat(t.dataset.id, -1),
-  catdown: t => moveCat(t.dataset.id, +1),
-  catdel: t => {
+  catedit: () => { syncNameField(); ui.catEdit = !ui.catEdit; if (ui.catEdit) ui.catDraft = { name: "", icon: ui.catDraft.icon }; render(); },
+  // 名前・アイコンを後から変える（D-073）
+  catopen: t => {
     const c = D.categories.find(x => x.id === t.dataset.id);
+    ui.catDraft = { id: c.id, name: c.name, icon: c.icon };
+    render();
+    const sc = $(".screen"); if (sc) sc.scrollTo({ top: 0, behavior: "smooth" });
+  },
+  catcancel: () => { ui.catDraft = { name: "", icon: ui.catDraft.icon }; render(); },
+  savecat: async () => {
     syncNameField();
+    const d = ui.catDraft;
+    const name = cut(d.name.trim(), MAX_CATEGORY_NAME);
+    const c = D.categories.find(x => x.id === d.id);
+    if (!name || !c) return;
+    // このカテゴリで付けた過去の記録も、新しい名前とアイコンにする（D-074）
+    const now = nowIso();
+    const recs = D.records.filter(r => r.categoryId === c.id).map(r => put("records", { ...r, name, icon: d.icon, updatedAt: now }));
+    ui.catDraft = { name: "", icon: d.icon };
+    await commit([put("categories", { ...c, name, icon: d.icon }), ...recs]);
+    toast(recs.length ? `保存しました（これまでの記録 ${recs.length}件も変えました）` : "保存しました");
+  },
+  catdel: () => {
+    syncNameField();
+    const c = D.categories.find(x => x.id === ui.catDraft.id);
     confirmDialog({ title: "このカテゴリを消しますか？", body: `${c.name}\nこれまでの記録は、名前とアイコンのまま残ります。`, ok: "消す", danger: true,
-      onOk: () => commit([del("categories", c.id)]) });
+      onOk: async () => { ui.catDraft = { name: "", icon: ui.catDraft.icon }; await commit([del("categories", c.id)]); } });
   },
   // サブスク
   newsub: () => { ui.page = { name: "sub", draft: { name: "", icon: "clapperboard", amount: 0, day: parse(TODAY).d, startDate: TODAY } }; render(); },
@@ -674,15 +708,64 @@ function syncNameField() {
   const s = $("#subname"); if (s && ui.page && ui.page.draft) ui.page.draft.name = s.value;
 }
 
-async function moveCat(id, dir) {
-  syncNameField();
+/** 並べ替えを保存する（ids は新しい並び） */
+async function saveCatOrder(ids) {
   const list = cats();
-  const i = list.findIndex(c => c.id === id), j = i + dir;
-  if (j < 0 || j >= list.length) return;
-  [list[i], list[j]] = [list[j], list[i]];
-  await commit(list.map((c, k) => put("categories", { ...c, order: k })));
+  if (ids.join() === list.map(c => c.id).join()) return;
+  await commit(ids.map((id, k) => put("categories", { ...list.find(c => c.id === id), order: k })));
   render();
 }
+
+// カテゴリの「≡」を押さえたまま上下に動かして並べ替える（D-075）
+let sortDrag = null;
+app.addEventListener("pointerdown", e => {
+  const h = e.target.closest("[data-handle]");
+  if (!h) return;
+  e.preventDefault();
+  const row = h.closest(".r"), listEl = row.parentElement;
+  const rows = [...listEl.children];
+  const sc = $(".screen");
+  sortDrag = { row, listEl, rows, sc, startY: e.clientY, startScroll: sc ? sc.scrollTop : 0, y: e.clientY, h: row.offsetHeight, from: rows.indexOf(row), to: rows.indexOf(row), timer: 0 };
+  // 画面の上下の端に近づいたら、画面を自動ですべらせる（一覧が画面に入りきらないとき）
+  sortDrag.timer = setInterval(() => {
+    const d = sortDrag;
+    if (!d || !d.sc) return;
+    const edge = d.y < 90 ? -8 : d.y > innerHeight - 150 ? 8 : 0;
+    if (edge) { d.sc.scrollTop += edge; moveSort(d.y); }
+  }, 16);
+  row.classList.add("dragging");
+  try { h.setPointerCapture(e.pointerId); } catch { /* 取れなくても動く */ }
+});
+app.addEventListener("pointermove", e => { if (sortDrag) moveSort(e.clientY); });
+function moveSort(y) {
+  const d = sortDrag;
+  d.y = y;
+  const dy = y - d.startY + (d.sc ? d.sc.scrollTop - d.startScroll : 0);
+  d.to = Math.max(0, Math.min(d.rows.length - 1, d.from + Math.round(dy / d.h)));
+  d.row.style.transform = `translateY(${dy}px)`;
+  d.rows.forEach((r, i) => {
+    if (r === d.row) return;
+    let shift = 0;
+    if (d.from < d.to && i > d.from && i <= d.to) shift = -d.h;
+    if (d.from > d.to && i < d.from && i >= d.to) shift = d.h;
+    r.style.transform = shift ? `translateY(${shift}px)` : "";
+  });
+}
+/** 指を離したら保存する。途中で止められたとき（電話など）は保存せず元の並びに戻す */
+function endSort(save) {
+  if (!sortDrag) return;
+  const d = sortDrag;
+  sortDrag = null;
+  clearInterval(d.timer);
+  d.rows.forEach(r => { r.style.transform = ""; });
+  d.row.classList.remove("dragging");
+  if (!save) return;
+  const ids = d.rows.map(r => r.dataset.id);
+  ids.splice(d.to, 0, ids.splice(d.from, 1)[0]);
+  saveCatOrder(ids);
+}
+app.addEventListener("pointerup", () => endSort(true));
+app.addEventListener("pointercancel", () => endSort(false));
 
 async function exportBackup() {
   const data = { records: D.records, categories: D.categories, subs: D.subs, subRuns: D.subRuns, settings: D.settings,
