@@ -239,6 +239,10 @@ input { font: inherit; color: inherit; }
 .sv b { display: block; font-size: 40px; font-weight: 300; margin-top: 6px; }
 .sv b.minus { color: var(--red); }
 .sv small { display: block; font-size: 11px; color: var(--gray); margin-top: 6px; }
+/* 期間の名前「2026/10月分」に添える「(2026/10/1 - 10/31)」は薄く小さく（D-071） */
+.pl { font-size: .78em; color: #ABAAA6; margin-left: 4px; font-weight: 300; }
+.pl.blk { display: block; margin: 2px 0 0; }
+.wheel button .pl { font-size: 11px; }
 .chart { background: var(--card); border-radius: 22px; padding: 14px 16px 10px; margin-bottom: 18px; }
 .chart h4 { font-size: 12px; font-weight: 400; color: var(--gray); margin: 0 0 8px; display: flex; justify-content: space-between; }
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }

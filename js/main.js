@@ -252,7 +252,7 @@ function settingsView() {
     <div class="grp">
       <button class="r" data-a="fixed">固定額<span class="v num" id="setfixed">${yen(s.fixedAmount)}円</span><span class="chev">${icon("chevron-right", 18)}</span></button>
       <button class="r" data-a="startday">月の開始日<span class="v" id="setday">毎月${s.startDay}日</span><span class="chev">${icon("chevron-right", 18)}</span></button>
-      <button class="r" data-a="savingsfrom">余り貯金の数え始め<span class="v" id="setsvfrom">${periodLabel(savingsFrom(hist(), D.meta.savingsFrom))} から</span><span class="chev">${icon("chevron-right", 18)}</span></button>
+      <button class="r" data-a="savingsfrom">余り貯金の数え始め<span class="v" id="setsvfrom">${periodLabel(savingsFrom(hist(), D.meta.savingsFrom), "から", true)}</span><span class="chev">${icon("chevron-right", 18)}</span></button>
     </div>
     <div class="label">記録</div>
     <div class="grp"><button class="r" data-a="page" data-p="categories">カテゴリ<span class="v">${D.categories.length}件</span><span class="chev">${icon("chevron-right", 18)}</span></button></div>
@@ -372,11 +372,19 @@ function daySheet(s) {
   </div>`;
 }
 
-/** 期間の名前: 1日始まりなら「2026/10」、それ以外は「2026/9/25〜」 */
-function periodLabel(start) {
+/**
+ * 期間の名前（D-071）: 「2026/10月分」と、その期間「(2026/10/15 - 11/14)」。
+ * 月は期間の始まりの月。期間は年をまたぐときだけ終わりにも年を付ける「(2026/12/15 - 2027/1/14)」。
+ */
+function periodName(start) {
+  const per = periodAny(hist(), start), a = parse(per.start), b = parse(per.end);
+  return { month: `${a.y}/${a.m}月分`, range: `(${a.y}/${a.m}/${a.d} - ${b.y !== a.y ? b.y + "/" : ""}${b.m}/${b.d})` };
+}
+/** 「2026/10月分」に、薄く小さい文字の「(2026/10/1 - 10/31)」を添える。after は「月分」のすぐ後ろに付ける言葉 */
+function periodLabel(start, after = "", block = false) {
   if (!start) return "";
-  const p = parse(start);
-  return p.d === 1 ? `${p.y}/${p.m}` : `${p.y}/${p.m}/${p.d}〜`;
+  const n = periodName(start);
+  return `<span class="pm">${n.month}${after}</span><span class="pl${block ? " blk" : ""}">${n.range}</span>`;
 }
 
 /** 余り貯金の数え始めを選ぶ画面（D-068）。今の期間から60期間（5年）前まで */
