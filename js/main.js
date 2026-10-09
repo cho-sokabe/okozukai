@@ -6,7 +6,7 @@ import { periodOf, periodAny, listPeriods, neighborPeriod, previewStartDay } fro
 import { summarize, byName } from "./logic/balance.js";
 import { dayMark, gridDays } from "./logic/calendar.js";
 import { autoRecord, upcoming } from "./logic/subs.js";
-import { savings } from "./logic/savings.js";
+import { savings, savingsFrom } from "./logic/savings.js";
 import { pressKey, canSave, cut, kindForSave, markUsed, MAX_MEMO, MAX_CATEGORY_NAME } from "./logic/entry.js";
 import { buildBackup, readBackup, fileName } from "./logic/backup.js";
 
@@ -147,7 +147,7 @@ function welcomeView() {
 function homeView() {
   const per = curPeriod();
   const s = summarize(per, D.records, D.subs, TODAY);
-  const sv = savings(hist(), D.records, TODAY).total;
+  const sv = savings(hist(), D.records, TODAY, D.meta.savingsFrom).total;
   const list = cats();
   const pages = [];
   for (let i = 0; i < list.length; i += 8) pages.push(list.slice(i, i + 8));
@@ -232,12 +232,12 @@ function summaryPage() {
 }
 
 function savingsPage() {
-  const sv = savings(hist(), D.records, TODAY);
+  const sv = savings(hist(), D.records, TODAY, D.meta.savingsFrom);
   const label = r => (parse(r.start).d === 1 ? `${parse(r.start).m}月` : `${md(r.start)}〜${md(r.end)}`);
   const bars = sv.rows.slice(-12).map(r => ({ k: label(r), v: r.remain }));
   return `<div class="screen" data-key="savings">
     <div class="navbar"><button class="circ" data-a="back" aria-label="戻る">${icon("chevron-left", 20)}</button><div class="ttl">余り貯金</div><div class="ghost"></div></div>
-    <div class="sv"><span>これまでの余り</span><b class="num ${sv.total < 0 ? "minus" : ""}" id="svtotal">${sv.total < 0 ? "−" : ""}${yen(sv.total)}<span class="yen">円</span></b></div>
+    <div class="sv"><span>これまでの余り</span><b class="num ${sv.total < 0 ? "minus" : ""}" id="svtotal">${sv.total < 0 ? "−" : ""}${yen(sv.total)}<span class="yen">円</span></b><small id="svfrom">${periodLabel(sv.from)} から数えています</small></div>
     <div class="chart" id="svchart"><h4><span>期間ごとの余り</span><span>過去${bars.length}期間</span></h4>${barChart(bars, { negRed: true, h: 110, pick: ui.sum.pick, pickKey: "sv" })}</div>
     <div class="label">内訳</div>
     <div class="grp rows" id="svlist">${sv.rows.length ? sv.rows.slice().reverse().map(r => `<div class="r"><span class="nm">${label(r)}${r.remain < 0 ? "の不足" : "の余り"}</span><span class="am ${r.remain >= 0 ? "in" : "minus"}">${r.remain < 0 ? "−" : "+"}${yen(r.remain)}<span class="yen">円</span></span></div>`).join("") : `<p class="empty">まだ終わった期間はありません</p>`}</div>
@@ -252,6 +252,7 @@ function settingsView() {
     <div class="grp">
       <button class="r" data-a="fixed">固定額<span class="v num" id="setfixed">${yen(s.fixedAmount)}円</span><span class="chev">${icon("chevron-right", 18)}</span></button>
       <button class="r" data-a="startday">月の開始日<span class="v" id="setday">毎月${s.startDay}日</span><span class="chev">${icon("chevron-right", 18)}</span></button>
+      <button class="r" data-a="savingsfrom">余り貯金の数え始め<span class="v" id="setsvfrom">${periodLabel(savingsFrom(hist(), D.meta.savingsFrom))} から</span><span class="chev">${icon("chevron-right", 18)}</span></button>
     </div>
     <div class="label">記録</div>
     <div class="grp"><button class="r" data-a="page" data-p="categories">カテゴリ<span class="v">${D.categories.length}件</span><span class="chev">${icon("chevron-right", 18)}</span></button></div>
@@ -371,6 +372,24 @@ function daySheet(s) {
   </div>`;
 }
 
+/** 期間の名前: 1日始まりなら「2026/10」、それ以外は「2026/9/25〜」 */
+function periodLabel(start) {
+  if (!start) return "";
+  const p = parse(start);
+  return p.d === 1 ? `${p.y}/${p.m}` : `${p.y}/${p.m}/${p.d}〜`;
+}
+
+/** 余り貯金の数え始めを選ぶ画面（D-068）。今の期間から60期間（5年）前まで */
+function periodSheet(s) {
+  return `<div class="dim" data-a="close"></div>
+  <div class="sheet" role="dialog" aria-label="${s.title}"><div class="grab"></div><button class="x" data-a="close" aria-label="閉じる">${icon("x", 20)}</button>
+    <div class="stitle">${s.title}</div>
+    <div class="wheelwrap"><div class="wheel" id="wheel"><div class="pad"></div>${s.items.map((st, i) => `<button class="${i === s.idx ? "on" : ""}" data-a="wheelperiod" data-i="${i}">${periodLabel(st)}</button>`).join("")}<div class="pad"></div></div></div>
+    <div class="hint" style="margin-top:0">選んだ期間から余り貯金に数えます。それより前の記録は消えません。<br>はじめての設定より前の期間は、はじめての設定の固定額で数えます。</div>
+    <button class="save" data-a="savefrom">保存</button>
+  </div>`;
+}
+
 function dialogView(d) {
   return `<div class="dim top"></div><div class="dialog" role="alertdialog" aria-label="${esc(d.title)}"><h3>${esc(d.title)}</h3>${d.body ? `<p>${esc(d.body)}</p>` : ""}
     <div class="btnrow">${d.ok ? `<button data-a="dlgcancel">やめる</button><button class="${d.danger ? "del" : "main"}" data-a="dlgok">${esc(d.ok)}</button>` : `<button class="main" data-a="dlgcancel">閉じる</button>`}</div></div>`;
@@ -386,7 +405,7 @@ function render() {
   else if (ui.page) html = { summary: summaryPage, savings: savingsPage, categories: categoriesPage, sub: subPage }[ui.page.name]();
   else html = { home: homeView, calendar: calendarView, settings: settingsView }[ui.tab]();
   const s = ui.sheet;
-  if (s) html += s.type === "entry" ? entrySheet(s) : s.type === "plan" ? planSheet(s) : s.type === "amount" ? amountSheet(s, s.title, s.hint, s.label) : daySheet(s);
+  if (s) html += s.type === "entry" ? entrySheet(s) : s.type === "plan" ? planSheet(s) : s.type === "amount" ? amountSheet(s, s.title, s.hint, s.label) : s.type === "period" ? periodSheet(s) : daySheet(s);
   if (ui.dialog) html += dialogView(ui.dialog);
   if (ui.toast) html += `<div class="toast" role="status">${esc(ui.toast)}</div>`;
   app.innerHTML = html;
@@ -397,6 +416,7 @@ function render() {
   checkScrolly();
   const wheel = $("#wheel");
   if (wheel && s && s.day) { wheel.scrollTop = (s.day - 1) * 36; }
+  if (wheel && s && s.type === "period") { wheel.scrollTop = s.idx * 36; }
 }
 
 function hookDots() {
@@ -519,6 +539,21 @@ const handlers = {
   welcomeday: () => { ui.sheet = { type: "day", what: "welcomeday", title: "月の開始日", day: ui.welcome.startDay, note: "この日から次の同じ日の前日までを1か月として数えます" }; render(); },
   subamount: () => { ui.sheet = { type: "amount", what: "subamount", title: "金額", amount: ui.page.draft.amount || 0, label: "決める" }; render(); },
   subday: () => { ui.sheet = { type: "day", what: "subday", title: "引き落とし日", day: ui.page.draft.day, note: "その日がない月は、月末に引き落とします" }; render(); },
+  savingsfrom: () => {
+    const items = [];
+    for (let p = curPeriod(), i = 0; p && i < 61; p = neighborPeriod(hist(), p, -1), i++) items.unshift(p.start);
+    const cur = savingsFrom(hist(), D.meta.savingsFrom);
+    const idx = Math.max(0, items.indexOf(cur));
+    ui.sheet = { type: "period", title: "余り貯金の数え始め", items, idx };
+    render();
+  },
+  wheelperiod: t => { const w = $("#wheel"); w.scrollTo({ top: +t.dataset.i * 36, behavior: "smooth" }); setPeriodIdx(+t.dataset.i); },
+  savefrom: async () => {
+    const s = ui.sheet;
+    ui.sheet = null;
+    await commit([put("meta", { key: "savingsFrom", value: s.items[s.idx] })]);
+    render();
+  },
   wheelday: t => { const w = $("#wheel"); w.scrollTo({ top: (+t.dataset.day - 1) * 36, behavior: "smooth" }); setDay(+t.dataset.day); },
   saveday: async () => {
     const s = ui.sheet;
@@ -612,6 +647,12 @@ const handlers = {
   dlgok: async () => { const d = ui.dialog; ui.dialog = null; render(); await d.onOk(); render(); },
 };
 
+function setPeriodIdx(i) {
+  if (!ui.sheet || ui.sheet.type !== "period" || ui.sheet.idx === i) return;
+  ui.sheet.idx = i;
+  app.querySelectorAll("#wheel button").forEach(b => b.classList.toggle("on", +b.dataset.i === i));
+}
+
 function setDay(day) {
   if (!ui.sheet || ui.sheet.type !== "day" || ui.sheet.day === day) return;
   ui.sheet.day = day;
@@ -636,7 +677,8 @@ async function moveCat(id, dir) {
 }
 
 async function exportBackup() {
-  const data = { records: D.records, categories: D.categories, subs: D.subs, subRuns: D.subRuns, settings: D.settings };
+  const data = { records: D.records, categories: D.categories, subs: D.subs, subRuns: D.subRuns, settings: D.settings,
+    meta: D.meta.savingsFrom ? [{ key: "savingsFrom", value: D.meta.savingsFrom }] : [] };
   const text = JSON.stringify(buildBackup(data, nowIso()), null, 1);
   const name = fileName(TODAY);
   const file = new File([text], name, { type: "application/json" });
@@ -667,6 +709,9 @@ async function importBackup(file) {
         ops.push({ store: s, clear: true });
         for (const x of b.data[s]) ops.push(put(s, x));
       }
+      // 余り貯金の数え始め（ファイルにあればそれに、なければ初めの状態に戻す）
+      const from = (b.data.meta || []).find(m => m.key === "savingsFrom");
+      ops.push(from ? put("meta", from) : del("meta", "savingsFrom"));
       await commit(ops);
       ui.tab = "home"; ui.page = null;
       toast("読み込みました");
@@ -698,7 +743,11 @@ app.addEventListener("scroll", e => {
   if (e.target.id !== "wheel") return;
   clearTimeout(setDay.t);
   const w = e.target;
-  setDay.t = setTimeout(() => setDay(Math.min(31, Math.max(1, Math.round(w.scrollTop / 36) + 1))), 90);
+  setDay.t = setTimeout(() => {
+    const i = Math.round(w.scrollTop / 36);
+    if (ui.sheet && ui.sheet.type === "period") setPeriodIdx(Math.min(ui.sheet.items.length - 1, Math.max(0, i)));
+    else setDay(Math.min(31, Math.max(1, i + 1)));
+  }, 90);
 }, true);
 // 下から出る画面の中身が入りきらないときだけ、たてにすべらせられるようにする（キーボードが出て高さが変わったときも判定し直す）
 function checkScrolly() {

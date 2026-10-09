@@ -10,6 +10,8 @@ export const fileName = today => `${APP}-${today}.json`;
 export function buildBackup(data, now) {
   const out = {};
   for (const t of TABLES) out[t] = data[t] || [];
+  // アプリの設定のうち、引き継ぐもの（余り貯金の数え始め。D-068）。前の版のファイルにはないので、なくても読める
+  out.meta = (data.meta || []).filter(m => m.key === "savingsFrom");
   return { app: APP, schemaVersion: SCHEMA_VERSION, exportedAt: now, data: out };
 }
 
@@ -45,6 +47,7 @@ export function readBackup(text) {
   });
   d.subRuns.forEach((r, i) => { if (!isText(r.subId) || !isDate(r.dueDate)) bad.push(`サブスクの記録済み ${i + 1} 件目`); });
   d.categories.forEach((c, i) => { if (!isText(c.id) || !isText(c.name)) bad.push(`カテゴリ ${i + 1} 件目`); });
+  if (d.meta !== undefined && (!Array.isArray(d.meta) || d.meta.some(m => !m || m.key !== "savingsFrom" || !isDate(m.value)))) bad.push("余り貯金の数え始め");
   if (!d.settings.length) bad.push("設定がありません");
   d.settings.forEach((s, i) => { if (!isDate(s.changedOn) || !isAmount(s.fixedAmount) || !(s.startDay >= 1 && s.startDay <= 31)) bad.push(`設定 ${i + 1} 件目`); });
   if (bad.length) return { ok: false, reason: "中身に正しくない所があります: " + bad.slice(0, 5).join("、") + (bad.length > 5 ? ` ほか ${bad.length - 5} 件` : "") };
