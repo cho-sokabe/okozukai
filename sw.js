@@ -2,7 +2,7 @@
 // アプリのファイルをすべて端末に保存し、開くときは保存したものを使う（ネットを待たない）。
 // 新しい版を置いたら VERSION を上げる。次にネットにつながった状態で開いたときに裏で取り込み、
 // その次に開いたときから新しい版になる。
-const VERSION = "okz-v1";
+const VERSION = "okz-v2";
 const FILES = [
   "./",
   "./index.html",
@@ -25,7 +25,8 @@ const FILES = [
 ];
 
 self.addEventListener("install", e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES)));
+  // 置き場や端末の控え（HTTP キャッシュ）を使わず、必ず置き場から取り直す（古いファイルが混ざらないように）
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(FILES.map(f => new Request(f, { cache: "reload" })))));
 });
 
 self.addEventListener("activate", e => {

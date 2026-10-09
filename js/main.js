@@ -2,7 +2,7 @@
 import * as db from "./db.js";
 import { icon, ICON_CHOICES, DEFAULT_CATEGORIES } from "./icons.js";
 import { today as todayOf, addDays, parse, weekday } from "./logic/date.js";
-import { periodOf, listPeriods, neighborPeriod, previewStartDay } from "./logic/period.js";
+import { periodOf, periodAny, listPeriods, neighborPeriod, previewStartDay } from "./logic/period.js";
 import { summarize, byName } from "./logic/balance.js";
 import { dayMark, gridDays } from "./logic/calendar.js";
 import { autoRecord, upcoming } from "./logic/subs.js";
@@ -177,12 +177,11 @@ function homeView() {
 }
 
 function calendarView() {
-  const per = periodOf(hist(), ui.cal.start || TODAY) || curPeriod();
+  const per = periodAny(hist(), ui.cal.start || TODAY);
   const sel = ui.cal.sel || TODAY;
   const budgets = new Map();
   const budgetOf = date => {
-    const p = periodOf(hist(), date);
-    if (!p) return null;
+    const p = periodAny(hist(), date);
     if (!budgets.has(p.start)) budgets.set(p.start, p.fixedAmount / p.days);
     return budgets.get(p.start);
   };
@@ -208,7 +207,7 @@ function calendarView() {
 }
 
 function summaryPage() {
-  const per = periodOf(hist(), ui.sum.start || TODAY) || curPeriod();
+  const per = periodAny(hist(), ui.sum.start || TODAY);
   const rs = D.records.filter(r => r.date >= per.start && r.date <= per.end);
   const income = rs.filter(r => r.kind === "in").reduce((a, r) => a + r.amount, 0);
   const plans = rs.filter(r => r.kind === "plan").reduce((a, r) => a + r.amount, 0) + upcoming(D.subs, TODAY >= per.start ? TODAY : addDays(per.start, -1), per.end).reduce((a, x) => a + x.sub.amount, 0);
@@ -395,6 +394,7 @@ function render() {
   if (nsc && keep && keep.key === nsc.dataset.key) nsc.scrollTop = keep.top;
   lastKey = nsc && nsc.dataset.key;
   hookDots();
+  checkScrolly();
   const wheel = $("#wheel");
   if (wheel && s && s.day) { wheel.scrollTop = (s.day - 1) * 36; }
 }
@@ -495,7 +495,7 @@ const handlers = {
   },
   day: t => { ui.cal.sel = t.dataset.d; render(); },
   calnav: t => {
-    const per = periodOf(hist(), ui.cal.start || TODAY) || curPeriod();
+    const per = periodAny(hist(), ui.cal.start || TODAY);
     const n = neighborPeriod(hist(), per, +t.dataset.dir);
     if (!n) return;
     ui.cal.start = n.start;
@@ -503,7 +503,7 @@ const handlers = {
     render();
   },
   sumnav: t => {
-    const per = periodOf(hist(), ui.sum.start || TODAY) || curPeriod();
+    const per = periodAny(hist(), ui.sum.start || TODAY);
     const n = neighborPeriod(hist(), per, +t.dataset.dir);
     if (!n) return;
     ui.sum.start = n.start; ui.sum.pick = null;
@@ -641,7 +641,8 @@ async function exportBackup() {
   const name = fileName(TODAY);
   const file = new File([text], name, { type: "application/json" });
   try {
-    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: name }); return; }
+    // ファイルだけを渡す。題名も渡すと、iPhone の「ファイルに保存」で題名のテキストまで保存されてしまう（B-003）
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
   } catch (e) { if (e && e.name === "AbortError") return; }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(file); a.download = name;
@@ -699,25 +700,49 @@ app.addEventListener("scroll", e => {
   const w = e.target;
   setDay.t = setTimeout(() => setDay(Math.min(31, Math.max(1, Math.round(w.scrollTop / 36) + 1))), 90);
 }, true);
-// 下から出る画面を下に引いて閉じる
+// 下から出る画面の中身が入りきらないときだけ、たてにすべらせられるようにする（キーボードが出て高さが変わったときも判定し直す）
+function checkScrolly() {
+  const sh = $(".sheet");
+  if (sh) sh.classList.toggle("scrolly", sh.scrollHeight > sh.clientHeight + 1);
+}
+(window.visualViewport || window).addEventListener("resize", checkScrolly);
+
+// 下から出る画面を下に引いて閉じる（B-001: 指に合わせて1コマごとに動かし、離したらすべるように閉じる）
 let drag = null;
 app.addEventListener("touchstart", e => {
   const sh = e.target.closest(".sheet");
-  if (!sh || sh.scrollTop > 0 || e.target.closest(".wheel, .cats, input")) return;
-  drag = { sh, y: e.touches[0].clientY, dy: 0 };
+  if (!sh || (sh.classList.contains("scrolly") && sh.scrollTop > 0) || e.target.closest(".wheel, .cats, input")) return;
+  sh.classList.remove("settle", "closing");
+  drag = { sh, dim: $(".dim:not(.top)"), y: e.touches[0].clientY, dy: 0, t: performance.now(), v: 0, raf: 0 };
 }, { passive: true });
 app.addEventListener("touchmove", e => {
   if (!drag) return;
-  drag.dy = Math.max(0, e.touches[0].clientY - drag.y);
-  drag.sh.style.transform = `translateY(${drag.dy}px)`;
+  const y = e.touches[0].clientY, now = performance.now();
+  const dy = Math.max(0, y - drag.y);
+  drag.v = (dy - drag.dy) / Math.max(1, now - drag.t);   // 1ms あたりの速さ
+  drag.dy = dy; drag.t = now;
+  if (!drag.raf) drag.raf = requestAnimationFrame(() => {
+    if (!drag) return;
+    drag.raf = 0;
+    drag.sh.style.transform = `translate3d(0, ${drag.dy}px, 0)`;
+    if (drag.dim) drag.dim.style.opacity = String(Math.max(0, 1 - drag.dy / (drag.sh.offsetHeight || 1)));
+  });
 }, { passive: true });
-app.addEventListener("touchend", () => {
+function endDrag() {
   if (!drag) return;
-  const close = drag.dy > 90;
-  drag.sh.style.transform = "";
+  const d = drag;
   drag = null;
-  if (close) { ui.sheet = null; render(); }
-});
+  cancelAnimationFrame(d.raf);
+  const close = d.dy > 90 || (d.dy > 24 && d.v > 0.6);
+  d.sh.classList.add(close ? "closing" : "settle");
+  if (d.dim) d.dim.classList.add(close ? "closing" : "settle");
+  d.sh.style.transform = close ? "translate3d(0, 100%, 0)" : "";
+  if (d.dim) d.dim.style.opacity = close ? "0" : "";
+  if (close) setTimeout(() => { ui.sheet = null; render(); }, 220);
+  else setTimeout(() => { d.sh.classList.remove("settle"); if (d.dim) d.dim.classList.remove("settle"); }, 220);
+}
+app.addEventListener("touchend", endDrag);
+app.addEventListener("touchcancel", endDrag);
 
 // 日付が変わったまま開きっぱなしでも、前に出てきたら計算し直す（A-16）
 document.addEventListener("visibilitychange", async () => {

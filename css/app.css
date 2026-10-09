@@ -111,7 +111,10 @@ input { font: inherit; color: inherit; }
 .cal .d { height: 50px; text-align: center; display: flex; flex-direction: column; align-items: center; }
 .cal .d .n { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; font-size: 14px; font-weight: 300; }
 .cal .d.today .n { background: #EFEFEC; }
-.cal .d.sel .n { box-shadow: inset 0 0 0 1.5px var(--ink); }
+/* 選んだ日の丸: どこも同じ 1.5px の太さで、残高の円グラフと同じ色（I-004・I-005） */
+.cal .d .n { position: relative; }
+.cal .d.sel .n::after { content: ""; position: absolute; inset: 0; border-radius: 50%; padding: 1.5px; background: linear-gradient(180deg, var(--ring-a), var(--ring-b));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); pointer-events: none; }
 .cal .d.other .n { color: var(--faint); }
 .cal .d.other .a { opacity: .5; }
 .cal .d .a { font-size: 10px; margin-top: 1px; font-variant-numeric: tabular-nums; }
@@ -125,7 +128,14 @@ input { font: inherit; color: inherit; }
 
 /* 下から出る画面 */
 .dim { position: fixed; inset: 0; background: rgba(60,60,55,.26); z-index: 4; }
-.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: var(--sheet); border-radius: 30px 30px 0 0; padding: 10px 24px calc(var(--safe-b) + 18px); max-height: calc(100% - var(--safe-t) - 40px); overflow-y: auto; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: var(--sheet); border-radius: 30px 30px 0 0; padding: 10px 24px calc(var(--safe-b) + 18px); max-height: calc(100% - var(--safe-t) - 40px); overflow-y: auto; overscroll-behavior: contain; touch-action: none; will-change: transform; }
+/* 中身が画面に入りきらないときだけ、たてにすべらせられるようにする */
+.sheet.scrolly { touch-action: pan-y; }
+.sheet .cats { touch-action: pan-x; }
+.sheet input { touch-action: manipulation; }
+.sheet.closing { transition: transform .22s cubic-bezier(.3,.7,.4,1); }
+.sheet.settle { transition: transform .2s ease-out; }
+.dim.closing, .dim.settle { transition: opacity .22s; }
 .sheet.tall { top: max(250px, calc(var(--safe-t) + 200px)); }
 .sheet .grab { width: 40px; height: 5px; border-radius: 3px; background: #E2E1DD; margin: 0 auto 6px; }
 .sheet .x { position: absolute; left: 14px; top: 22px; width: 40px; height: 40px; display: grid; place-items: center; color: #666; }
@@ -161,13 +171,14 @@ input { font: inherit; color: inherit; }
 .btnrow > button:disabled { color: var(--faint); }
 
 /* 日を回す（月の開始日・引き落とし日） */
-.wheel { position: relative; height: 180px; overflow-y: auto; scroll-snap-type: y mandatory; scrollbar-width: none; margin: 6px 0 18px; }
+.wheel { position: relative; height: 180px; overflow-y: auto; scroll-snap-type: y mandatory; scrollbar-width: none; touch-action: pan-y; }
 .wheel::-webkit-scrollbar { display: none; }
 .wheel .pad { height: 72px; }
-.wheel button { display: block; width: 100%; height: 36px; text-align: center; font-size: 15px; color: var(--faint); font-weight: 300; scroll-snap-align: center; }
+.wheel button { display: flex; align-items: center; justify-content: center; width: 100%; height: 36px; line-height: 1; font-size: 15px; color: var(--faint); font-weight: 300; scroll-snap-align: center; }
 .wheel button.on { color: var(--ink); font-size: 19px; }
-.wheelwrap { position: relative; }
-.wheelwrap::before { content: ""; position: absolute; left: 0; right: 0; top: 78px; height: 36px; border-radius: 10px; background: var(--chip); pointer-events: none; }
+/* 塗りの四角は、日を回す部品のまん中に置く（B-002: 以前は余白のずれで 6px 下に出ていた） */
+.wheelwrap { position: relative; margin: 6px 0 18px; }
+.wheelwrap::before { content: ""; position: absolute; left: 0; right: 0; top: calc(50% - 18px); height: 36px; border-radius: 10px; background: var(--chip); pointer-events: none; }
 .preview { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 4px 16px; font-size: 13px; margin-bottom: 16px; }
 .preview div { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px solid var(--line); }
 .preview div:last-child { border-bottom: 0; }

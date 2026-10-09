@@ -47,9 +47,10 @@ export function listPeriods(history, untilDate) {
   if (!history || !history.length) return [];
   const hist = sorted(history);
   const first = hist[0];
-  if (untilDate < first.changedOn) return [];
   let sd = first.startDay;
   let s = startContaining(first.changedOn, sd);
+  // はじめての設定をした日を含む期間からが対象（その期間の、設定より前の日も含む）
+  if (untilDate < s) return [];
   const out = [];
   for (let guard = 0; guard < 2400; guard++) {
     const natural = addDays(nextStart(s, sd), -1);
@@ -78,10 +79,23 @@ export function periodOf(history, date) {
   return p && p.start <= date && date <= p.end ? p : null;
 }
 
-/** date を含む期間の、前（-1）または次（+1）の期間 */
+/**
+ * date を含む期間。はじめての設定より前の日なら、はじめての設定の開始日・固定額で区切った期間を返す
+ * （カレンダー・集計で過去に戻れるようにするため。I-006）。その期間には beforeSetup: true を付ける。
+ */
+export function periodAny(history, date) {
+  const p = periodOf(history, date);
+  if (p) return p;
+  const first = sorted(history)[0];
+  const s = startContaining(date, first.startDay);
+  const end = addDays(nextStart(s, first.startDay), -1);
+  return { start: s, end, days: diffDays(s, end) + 1, startDay: first.startDay, fixedAmount: first.fixedAmount, beforeSetup: true };
+}
+
+/** date を含む期間の、前（-1）または次（+1）の期間（はじめての設定より前にも戻れる） */
 export function neighborPeriod(history, period, dir) {
-  if (dir < 0) return periodOf(history, addDays(period.start, -1));
-  return periodOf(history, addDays(period.end, 1));
+  if (dir < 0) return periodAny(history, addDays(period.start, -1));
+  return periodAny(history, addDays(period.end, 1));
 }
 
 /**
